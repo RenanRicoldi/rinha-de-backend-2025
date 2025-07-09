@@ -1,9 +1,32 @@
+import fastifyCors from "@fastify/cors";
+import fastifySwagger from "@fastify/swagger";
 import Fastify from "fastify";
 import { request } from 'undici';
 
 const api = Fastify({
   logger: true
 });
+
+await api.register(fastifySwagger, {
+  openapi: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Rinha de Backend',
+      version: '1.0.0',
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 3000}`,
+        description: 'Development server'
+      }
+    ]
+  },
+})
+
+await api.register(fastifyCors, {
+  allowedHeaders: '*',
+  origin: '*'
+})
 
 interface IRequestBody {
   correlationId: string;
@@ -32,17 +55,37 @@ api.post<{
 }, async (req, res) => {
   try {
     const body = { ...req.body, requestedAt: new Date().toISOString() };
-    await request(process.env.PAYMENT_PROCESSOR_URL_DEFAULT, { method: 'POST', body: JSON.stringify(body) });
+    const result = await request(
+      `${process.env.PAYMENT_PROCESSOR_URL_DEFAULT}/payments`, 
+      { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
+    );
+    if(result.statusCode > 299)
+      throw new Error(`Body: ${JSON.stringify(body)} | Status code: ${result.statusCode}`)
+    const responseBody = JSON.stringify(await result.body.json());
+    console.log("SUCCESS PROCESSING PAYMENT ON DEFAULT PROCESSOR", responseBody);
     defaultRequests.push({...body, requestedAt: new Date(body.requestedAt)});
+    console.log(defaultRequests[defaultRequests.length - 1]);
   } catch(ex) {
     console.log("ERROR PROCESSING PAYMENT ON DEFAULT PROCESSOR", ex?.message);
     let success = false;
+    let attempts = 0;
     while(!success)
     {
+      if(attempts >= 10)
+          return res.code(500).send({ success: false });
       try {
+        attempts += 1;
         const body = { ...req.body, requestedAt: new Date().toISOString() };
-        await request(process.env.PAYMENT_PROCESSOR_URL_FALLBACK, { method: 'POST', body: JSON.stringify(body) });
+        const result = await request(
+          `${process.env.PAYMENT_PROCESSOR_URL_FALLBACK}/payments`,
+          { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
+        );
+        if(result.statusCode > 299)
+          throw new Error(`Body: ${JSON.stringify(body)} | Status code: ${result.statusCode}`)
+        const responseBody = JSON.stringify(await result.body.json());
+        console.log("SUCCESS PROCESSING PAYMENT ON FALLBACK PROCESSOR", responseBody);
         fallbackRequests.push({...body, requestedAt: new Date(body.requestedAt)});
+        console.log(fallbackRequests[fallbackRequests.length - 1]);
         success = true;
       } catch (fallbackEx) {
         console.log("ERROR PROCESSING PAYMENT ON FALLBACK PROCESSOR", fallbackEx?.message);
@@ -102,6 +145,10 @@ api.get<{
       )
   });
 });
+
+api.get('/openapi.json', async (request, reply) => {
+  return api.swagger()
+})
 
 api.listen({
     port: Number(process.env.PORT) || 3000
