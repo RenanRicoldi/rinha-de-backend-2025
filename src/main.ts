@@ -56,7 +56,7 @@ api.post<{
   try {
     const body = { ...req.body, requestedAt: new Date().toISOString() };
     const result = await request(
-      `${process.env.PAYMENT_PROCESSOR_URL_DEFAULT}/payments`, 
+      `${process.env.PROCESSOR_DEFAULT_URL}/payments`, 
       { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
     );
     if(result.statusCode > 299)
@@ -77,7 +77,7 @@ api.post<{
         attempts += 1;
         const body = { ...req.body, requestedAt: new Date().toISOString() };
         const result = await request(
-          `${process.env.PAYMENT_PROCESSOR_URL_FALLBACK}/payments`,
+          `${process.env.PROCESSOR_FALLBACK_URL}/payments`,
           { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
         );
         if(result.statusCode > 299)
@@ -151,5 +151,6 @@ api.get('/openapi.json', async (request, reply) => {
 })
 
 api.listen({
-    port: Number(process.env.PORT) || 3000
+    port: Number(process.env.PORT) || 3000,
+    host: '0.0.0.0'
 })
